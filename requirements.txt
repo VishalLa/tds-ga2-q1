@@ -3,3 +3,4 @@ uvicorn
 pydantic[email]
 pyjwt[crypto]
 pydantic-settings
+python-dotenv

@@ -1,9 +1,13 @@
 import os
 import jwt
-from fastapi import APIRouter, HTTPException, Depends
+import yaml
+from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from schema import StatsResponse, TokenRequest
 from config import get_setting
+
+from typing import Optional, List
+from dotenv import dotenv_values
 
 app = APIRouter()
 
@@ -58,4 +62,102 @@ def verify(payload: TokenRequest, settings = Depends(get_setting)):
             status_code=401,
             content={"valid": False}
         )
+    
 
+
+def coerce_types(config_dict: dict) -> dict:
+    """
+    1. defaults (hardcoded)
+    port: 8000
+    workers: 1
+    debug: false
+    log_level: info
+    api_key: default-secret-000
+
+    2. config.development.yaml
+    port: 8610
+    log_level: warning
+    api_key: key-dmiwtwryrj
+
+    3. .env file
+    APP_LOG_LEVEL=error
+
+    4. OS env vars (APP_* prefix)
+    APP_PORT=8695
+    APP_WORKERS=11
+    APP_DEBUG=false
+    APP_LOG_LEVEL=warning
+    APP_API_KEY=key-mm2cy4lc0j
+    """
+
+    coerced = {}
+
+    for key, value in config_dict.items():
+        if key in ["port", "workers"]:
+            try:
+                coerced[key] = int(value)
+            except (ValueError, TypeError):
+                coerced[key] = value 
+        elif key == "debug":
+            if isinstance(value, bool):
+                coerced[key] = value
+            elif isinstance(value, str):
+                coerced[key] = value.lower() in ("true", "1", "yes", "on")
+            else:
+                coerced[key] = bool(value)
+        else: 
+            coerced[key] = value
+    
+    return coerced
+
+
+@app.get("/effective-config")
+def get_effective_config(set: Optional[List[str]] = Query(None)):
+    # --- Layer 1: Defaults (Lowest Precedence) ---
+    merged_config = {
+        "port": 8000,
+        "workers": 1,
+        "debug": False,
+        "log_level": "info",
+        "api_key": "default-secret-000"
+    }
+
+    # --- Layer 2: config.development.yaml ---
+    try:
+        with open("config.development.yaml", "r") as f:
+            yaml_config = yaml.safe_load(f)
+            if yaml_config:
+                merged_config.update(yaml_config)
+    except FileNotFoundError:
+        pass
+
+    # --- Layer 3: .env file ---
+    # dotenv_values reads the file directly without touching OS env vars
+    env_file_config = dotenv_values(".env")
+    for k, v in env_file_config.items():
+        if k == "NUM_WORKERS":
+            merged_config["workers"] = v
+        elif k.startswith("APP_"):
+            clean_key = k[4:].lower() # strips "APP_" and makes lowercase
+            merged_config[clean_key] = v
+
+    # --- Layer 4: OS Environment Variables ---
+    for k, v in os.environ.items():
+        if k.startswith("APP_"):
+            clean_key = k[4:].lower()
+            merged_config[clean_key] = v
+
+    # --- Layer 5: CLI Overrides (Highest Precedence) ---
+    # Handled via ?set=key=value query parameters
+    if set:
+        for override in set:
+            if "=" in override:
+                key, value = override.split("=", 1)
+                merged_config[key] = value
+
+    # --- Apply Formatting ---
+    final_config = coerce_types(merged_config)
+
+    # --- Secret Masking ---
+    if "api_key" in final_config:
+        final_config["api_key"] = "****"

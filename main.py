@@ -11,7 +11,8 @@ import api
 app = FastAPI(title="Tds GA2")
 
 origins = [
-    "https://dash-wobted.example.com"
+    "https://dash-wobted.example.com",
+    "https://exam.sanand.workers.dev/tds-2026-05-ga2"
 ]
 
 app.add_middleware(
