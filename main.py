@@ -3,21 +3,12 @@ import uuid
 import time
 from typing import Callable
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
 
-import uvicorn
+import api
 
-class StatsResponse(BaseModel):
-    email: EmailStr
-    count: int 
-    sum: int 
-    min: int
-    max: int 
-    mean: float
-
-app = FastAPI(title="Tds GA1")
+app = FastAPI(title="Tds GA2")
 
 origins = [
     "https://dash-wobted.example.com"
@@ -28,7 +19,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_headers=["Authorization", "Content-Type"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
 )
 
 # Header Middleware 
@@ -46,32 +37,12 @@ async def add_process_time_and_id_header(request: Request, call_next: Callable):
 
     return response
 
-# API's
-@app.get("/health")
-def health():
-    return {"status": "ok"}
 
-@app.get("/stats", response_model=StatsResponse, status_code=200)
-def stats(values: str): 
-    str_values = values.split(",")
+app.include_router(api.app)
+
+
+
+# if __name__ == "__main__":
+#     port = int(os.environ.get("PORT", 8000))
     
-    try: 
-        int_values = [int(i) for i in str_values]
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Query values must be comma-separated integers.")
-
-    stats_dict = {
-        "email": "23f2003086@ds.study.iitm.ac.in",
-        "count": len(int_values),
-        "sum": sum(int_values),
-        "min": min(int_values),
-        "max": max(int_values),
-        "mean": sum(int_values) / len(int_values)
-    }
-
-    return stats_dict
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+#     uvicorn.run("main:app", host="0.0.0.0", port=port)
