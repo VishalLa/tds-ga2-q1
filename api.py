@@ -161,3 +161,4 @@ def get_effective_config(set: Optional[List[str]] = Query(None)):
     # --- Secret Masking ---
     if "api_key" in final_config:
         final_config["api_key"] = "****"
+    return final_config
