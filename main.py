@@ -15,12 +15,20 @@ origins = [
     "https://exam.sanand.workers.dev/tds-2026-05-ga2"
 ]
 
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=origins,
+#     allow_credentials=True,
+#     allow_headers=["Authorization", "Content-Type"],
+#     allow_methods=["GET", "POST"],
+# )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_headers=["Authorization", "Content-Type"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Header Middleware 
