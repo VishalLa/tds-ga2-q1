@@ -36,9 +36,11 @@ def stats(values: str):
 @app.post("/verify")
 def verify(payload: TokenRequest, settings = Depends(get_setting)):
     try: 
+        public_key = settings.idp_public_key.replace("\\n", "\n")
+        
         decoded_claims = jwt.decode(
             payload.token,
-            settings.idp_public_key,
+            public_key,
             algorithms=["RS256"],
             audience=settings.expected_audience,
             issuer=settings.expected_issuer
