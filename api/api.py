@@ -14,8 +14,7 @@ from cache import cache
 
 from typing import Optional, List
 from collections import defaultdict
-from dotenv import dotenv_values, load_dotenv
-load_dotenv()
+from dotenv import dotenv_values
 
 app = APIRouter()
 
@@ -26,20 +25,16 @@ def health():
 
 @app.get("/healthz")
 def healthz():
+    uptime = time.time() - START_TIME
     try:
         if cache.ping():
-            return {"status": "ok", "redis": "up"}
+            return {"status": "ok", "redis": "up", "uptime_s": uptime}
     except redis.ConnectionError:
         raise HTTPException(
             status_code=503, 
-            detail={"status": "error", "redis": "down"}
+            detail={"status": "error", "redis": "down", "uptime_s": uptime}
         )
 
-    # uptime = time.time() - START_TIME
-    # return {
-    #     "status": "ok",
-    #     "uptime_s": uptime
-    # }
 
 @app.get("/stats", response_model=StatsResponse, status_code=200)
 def stats(values: str): 
@@ -201,8 +196,8 @@ def get_count(key: str):
     return {"key": key, "count": int(count)}
 
 
-def verify_api_key(x_api_key: Optional[str] = Header(None)):
-    expected_key = os.environ.get("API_KEY")
+def verify_api_key(x_api_key: Optional[str] = Header(None), settings = Depends(get_setting)):
+    expected_key = settings.api_key
     
     if not expected_key or x_api_key != expected_key:
         raise HTTPException(

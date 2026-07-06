@@ -7,3 +7,4 @@ python-dotenv
 pyyaml
 redis
 prometheus-client
+httpx

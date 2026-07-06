@@ -7,9 +7,27 @@ services:
       - "8000:8000"
     depends_on:
       - redis
+      - ollama
     environment:
       - REDIS_HOST=redis
-      
+      - OLLAMA_API_URL=http://ollama:11434/v1/chat/completions
+      - MODEL_NAME=qwen2.5:0.5b
+
   redis:
     image: "redis:alpine"
     restart: always
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama_service
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_storage:/root/.ollama
+    restart: always
+
+volumes:
+  ollama_storage:
