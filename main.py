@@ -7,8 +7,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 import api
+from config import LOGS, REQUEST_COUNTER
 
 app = FastAPI(title="Tds GA2")
+
 
 origins = [
     "https://dash-wobted.example.com",
@@ -32,21 +34,38 @@ app.add_middleware(
 )
 
 # Header Middleware 
-@app.middleware("http")
-async def add_process_time_and_id_header(request: Request, call_next: Callable):
-    request_id = str(uuid.uuid4())
-    start_time = time.perf_counter()
+# @app.middleware("http")
+# async def add_process_time_and_id_header(request: Request, call_next: Callable):
+#     request_id = str(uuid.uuid4())
+#     start_time = time.perf_counter()
 
-    response = await call_next(request)
+#     response = await call_next(request)
 
-    process_time = time.perf_counter() - start_time
+#     process_time = time.perf_counter() - start_time
 
-    response.headers["X-Request-ID"] = request_id
-    response.headers["X-Process-Time"] = str(process_time)
+#     response.headers["X-Request-ID"] = request_id
+#     response.headers["X-Process-Time"] = str(process_time)
 
-    return response
+#     return response
 
 app.include_router(api.app)
+
+@app.middleware("http")
+async def track_and_log_requests(request: Request, call_next: Callable):
+    REQUEST_COUNTER.inc()
+    req_id = str(uuid.uuid4())
+
+    log_entry = {
+        "level": "INFO",
+        "ts": time.time(),
+        "path": request.url.path,
+        "request_id": req_id
+    }
+    LOGS.append(log_entry)
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = req_id
+    return response
 
 
 

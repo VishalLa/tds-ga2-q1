@@ -1,17 +1,21 @@
 import os
 import jwt
+import time
 import yaml
 import redis
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Header, Response
 from fastapi.responses import JSONResponse
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
-from schema import StatsResponse, TokenRequest
-from config import get_setting
+from schema import StatsResponse, TokenRequest, Event, AnalyticsRequest
+from config import get_setting, START_TIME, LOGS
 from cache import cache
 
 from typing import Optional, List
-from dotenv import dotenv_values
+from collections import defaultdict
+from dotenv import dotenv_values, load_dotenv
+load_dotenv()
 
 app = APIRouter()
 
@@ -22,14 +26,20 @@ def health():
 
 @app.get("/healthz")
 def healthz():
-    try:
-        if cache.ping():
-            return {"status": "ok", "redis": "up"}
-    except redis.ConnectionError:
-        raise HTTPException(
-            status_code=503, 
-            detail={"status": "error", "redis": "down"}
-        )
+    # try:
+    #     if cache.ping():
+    #         return {"status": "ok", "redis": "up"}
+    # except redis.ConnectionError:
+    #     raise HTTPException(
+    #         status_code=503, 
+    #         detail={"status": "error", "redis": "down"}
+    #     )
+
+    uptime = time.time() - START_TIME
+    return {
+        "status": "ok",
+        "uptime_s": uptime
+    }
 
 @app.get("/stats", response_model=StatsResponse, status_code=200)
 def stats(values: str): 
@@ -190,4 +200,63 @@ def get_count(key: str):
     if count is None: count = 0
     return {"key": key, "count": int(count)}
 
+
+def verify_api_key(x_api_key: Optional[str] = Header(None)):
+    expected_key = os.environ.get("API_KEY")
+    
+    if not expected_key or x_api_key != expected_key:
+        raise HTTPException(
+            status_code=401, 
+            detail="Unauthorized: Invalid or missing API Key"
+        )
+
+@app.post("/analytics", dependencies=[Depends(verify_api_key)])
+def process_analytics(
+    payload: AnalyticsRequest,
+):
+    
+    events = payload.events
+
+    unique_users = set()
+    user_revenue = defaultdict(float)
+    total_revenue = 0.0
+
+    for event in events:
+        unique_users.add(event.user)
+
+        if event.amount > 0:
+            total_revenue += event.amount
+            user_revenue[event.user] += event.amount
+
+    top_user = ""
+    if user_revenue:
+        top_user = max(user_revenue, key=user_revenue.get)
+
+    return {
+        "email": "23f2003086@ds.study.iitm.ac.in", 
+        "total_events": len(events),
+        "unique_users": len(unique_users),
+        "revenue": total_revenue,
+        "top_user": top_user
+    }
+
+
+@app.get("/work")
+def get_work(n: str):
+    return {
+        "email": "23f2003086@ds.study.iitm.ac.in", 
+        "done": n
+    }
+
+@app.get("/metrics")
+def get_metrics():
+    return Response(
+        content=generate_latest(), 
+        media_type=CONTENT_TYPE_LATEST
+    )
+
+@app.get("/logs/tail")
+def log_tail(limit: int = 10):
+    log_list = list(LOGS)
+    return log_list[-limit:]
 

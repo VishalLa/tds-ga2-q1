@@ -1,3 +1,4 @@
+from typing import List
 from pydantic import BaseModel, EmailStr
 
 class StatsResponse(BaseModel):
@@ -11,3 +12,12 @@ class StatsResponse(BaseModel):
 
 class TokenRequest(BaseModel):
     token: str
+
+
+class Event(BaseModel):
+    user: str
+    amount: float
+    ts: int
+
+class AnalyticsRequest(BaseModel):
+    events: List[Event]
