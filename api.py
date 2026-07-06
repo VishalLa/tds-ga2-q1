@@ -1,10 +1,14 @@
 import os
 import jwt
 import yaml
+import redis
+
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
+
 from schema import StatsResponse, TokenRequest
 from config import get_setting
+from cache import cache
 
 from typing import Optional, List
 from dotenv import dotenv_values
@@ -15,6 +19,17 @@ app = APIRouter()
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/healthz")
+def healthz():
+    try:
+        if cache.ping():
+            return {"status": "ok", "redis": "up"}
+    except redis.ConnectionError:
+        raise HTTPException(
+            status_code=503, 
+            detail={"status": "error", "redis": "down"}
+        )
 
 @app.get("/stats", response_model=StatsResponse, status_code=200)
 def stats(values: str): 
@@ -162,3 +177,17 @@ def get_effective_config(set: Optional[List[str]] = Query(None)):
     if "api_key" in final_config:
         final_config["api_key"] = "****"
     return final_config
+
+@app.post("/hit/{key}")
+def hut(key: str):
+    count = cache.incr(key)
+    return {"key": key, "count": count}
+
+
+@app.get("/count/{key}")
+def get_count(key: str):
+    count = cache.get(key) 
+    if count is None: count = 0
+    return {"key": key, "count": int(count)}
+
+

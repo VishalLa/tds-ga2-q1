@@ -5,3 +5,4 @@ pyjwt[crypto]
 pydantic-settings
 python-dotenv
 pyyaml
+redis
