@@ -26,20 +26,20 @@ def health():
 
 @app.get("/healthz")
 def healthz():
-    # try:
-    #     if cache.ping():
-    #         return {"status": "ok", "redis": "up"}
-    # except redis.ConnectionError:
-    #     raise HTTPException(
-    #         status_code=503, 
-    #         detail={"status": "error", "redis": "down"}
-    #     )
+    try:
+        if cache.ping():
+            return {"status": "ok", "redis": "up"}
+    except redis.ConnectionError:
+        raise HTTPException(
+            status_code=503, 
+            detail={"status": "error", "redis": "down"}
+        )
 
-    uptime = time.time() - START_TIME
-    return {
-        "status": "ok",
-        "uptime_s": uptime
-    }
+    # uptime = time.time() - START_TIME
+    # return {
+    #     "status": "ok",
+    #     "uptime_s": uptime
+    # }
 
 @app.get("/stats", response_model=StatsResponse, status_code=200)
 def stats(values: str): 
