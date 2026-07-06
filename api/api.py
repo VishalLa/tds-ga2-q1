@@ -24,10 +24,10 @@ def health():
     return {"status": "ok"}
 
 @app.get("/healthz")
-def healthz():
+async def healthz():
     uptime = time.time() - START_TIME
     try:
-        if cache.ping():
+        if await cache.ping():
             return {"status": "ok", "redis": "up", "uptime_s": uptime}
     except redis.ConnectionError:
         raise HTTPException(
@@ -184,14 +184,14 @@ def get_effective_config(set: Optional[List[str]] = Query(None)):
     return final_config
 
 @app.post("/hit/{key}")
-def hut(key: str):
-    count = cache.incr(key)
+async def hut(key: str):
+    count = await cache.incr(key)
     return {"key": key, "count": count}
 
 
 @app.get("/count/{key}")
-def get_count(key: str):
-    count = cache.get(key) 
+async def get_count(key: str):
+    count = await cache.get(key) 
     if count is None: count = 0
     return {"key": key, "count": int(count)}
 

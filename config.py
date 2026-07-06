@@ -9,7 +9,7 @@ START_TIME = time.time()
 REQUEST_COUNTER = Counter("http_requests", "Total HTTP Requests")
 
 TOTAL_ORDERS = 51
-RATE_LIMIT_MAX_REQS = 17
+RATE_LIMIT_MAX_REQS = 10
 RATE_LIMIT_WINDOW_SEC = 10.0
 
 CATALOG = [

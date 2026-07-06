@@ -12,51 +12,32 @@ from config import LOGS, REQUEST_COUNTER, RATE_LIMIT_WINDOW_SEC, RATE_LIMIT_MAX_
 
 app = FastAPI(title="Tds GA2")
 
-
 origins = [
     "https://dash-wobted.example.com",
-    "https://exam.sanand.workers.dev/tds-2026-05-ga2"
+    "https://exam.sanand.workers.dev",  # <-- Removed the path here
+    "https://app-aqq91j.example.com"
 ]
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=origins,
-#     allow_credentials=True,
-#     allow_headers=["Authorization", "Content-Type"],
-#     allow_methods=["GET", "POST"],
-# )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
     allow_headers=["*"],
+    allow_methods=["*"],
+    expose_headers=["X-Request-ID", "Retry-After"] 
 )
-
-# Header Middleware
-# @app.middleware("http")
-# async def add_process_time_and_id_header(request: Request, call_next: Callable):
-#     request_id = str(uuid.uuid4())
-#     start_time = time.perf_counter()
-
-#     response = await call_next(request)
-
-#     process_time = time.perf_counter() - start_time
-
-#     response.headers["X-Request-ID"] = request_id
-#     response.headers["X-Process-Time"] = str(process_time)
-
-#     return response
 
 app.include_router(api.app)
 app.include_router(llm_api.app)
 app.include_router(new_api.app)
 
+
 @app.middleware("http")
 async def track_and_log_requests(request: Request, call_next: Callable):
     REQUEST_COUNTER.inc()
-    req_id = str(uuid.uuid4())
+    
+    # Read the request_id created by the Request Context Middleware
+    req_id = getattr(request.state, "request_id", str(uuid.uuid4()))
 
     log_entry = {
         "level": "INFO",
@@ -67,7 +48,6 @@ async def track_and_log_requests(request: Request, call_next: Callable):
     LOGS.append(log_entry)
 
     response = await call_next(request)
-    response.headers["X-Request-ID"] = req_id
     return response
 
 
@@ -84,12 +64,12 @@ async def rate_limit_middleware(request: Request, call_next: Callable):
 
         # Drop old requests from the Redis Sorted Set
         await cache.zremrangebyscore(redis_key, 0, cutoff)
+        
         # Count how many requests are left in the current 10-second window
         current_count = await cache.zcard(redis_key)
 
         # Check if they hit the limit
         if current_count >= RATE_LIMIT_MAX_REQS:
-            # Fetch the oldest request in the window to calculate accurate Retry-After
             oldest_entry = await cache.zrange(redis_key, 0, 0, withscores=True)
             if oldest_entry:
                 oldest_ts = oldest_entry[0][1]
@@ -97,30 +77,44 @@ async def rate_limit_middleware(request: Request, call_next: Callable):
             else:
                 retry_after = int(RATE_LIMIT_WINDOW_SEC)
 
+            origin = request.headers.get("origin")
+            headers = {
+                "Retry-After": str(retry_after),
+                "X-Request-Id": getattr(request.state, "request_id", "")
+            }
+            
+            if origin in origins:
+                headers["Access-Control-Allow-Origin"] = origin
+                headers["Access-Control-Allow-Credentials"] = "true"
+                headers["Access-Control-Expose-Headers"] = "X-Request-Id, Retry-After"
+
             return Response(
                 content='{"detail": "Too Many Requests"}',
                 status_code=429,
                 media_type="application/json",
-                headers={
-                    "Retry-After": str(retry_after),
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Expose-Headers": "Retry-After"
-                }
+                headers=headers
             )
 
-        # if allowed, record the new request
+        # Record the new request
         request_id = str(uuid.uuid4())
         await cache.zadd(redis_key, {request_id: now})
-
-        # set a TTL on the whole key
         await cache.expire(redis_key, int(RATE_LIMIT_WINDOW_SEC) + 2)
 
     return await call_next(request)
 
 
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next: Callable):
+    req_id = request.headers.get("x-request-id")
+    if not req_id:
+        req_id = str(uuid.uuid4())
 
-# if __name__ == "__main__":
-#     port = int(os.environ.get("PORT", 8000))
+    # Attach to request state so /ping and the logger can read it
+    request.state.request_id = req_id
 
-#     uvicorn.run("main:app", host="0.0.0.0", port=port)
+    response = await call_next(request)
+
+    # Attach to the response headers
+    response.headers["X-Request-ID"] = req_id
+    return response
+

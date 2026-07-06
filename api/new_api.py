@@ -59,3 +59,10 @@ async def create_idempotent_order(request: Request, response: Response):
     )
 
     return new_order
+
+@app.get("/ping")
+async def ping(request: Request):
+    return {
+        "email": "23f2003086@ds.study.iitm.ac.in",
+        "request_id": request.state.request_id
+    }

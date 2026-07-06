@@ -35,7 +35,7 @@ Extract the following exact fields from the provided invoice text:
 
 ### EXAMPLE OUTPUT FORMAT
 {
-  "vendor": "Acme Industries Ltd.",
+  "vendor": "xyz",
   "amount": 1499.50,
   "currency": "USD",
   "date": "2026-07-15"
