@@ -5,7 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image 
-import google.generativeai as genai
+import google as genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -42,10 +43,11 @@ CRITICAL RULES:
 4. Formatting: Provide the direct answer clearly and concisely. Do not add conversational filler like "The image shows..." or "Based on the document...". 
 """
 
-model = genai.GenerativeModel(
-    model_name='gemini-1.5-pro',
-    system_instruction=PROMPT
-)
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+@app.get("/")
+async def health_check():
+    return {"status": "API is running"}
 
 @app.post("/answer-image")
 async def answer_image(data: RequestData):
@@ -60,10 +62,16 @@ async def answer_image(data: RequestData):
         raise HTTPException(status_code=400, detail="Invalid base64 image data")
     
     try:
-        response = model.generate_content([image, data.question])
-        final_answer = response.text.strip()
+        response = client.models.generate_content(
+            model='gemini-1.5-pro',
+            contents=[image, data.question],
+            config=types.GenerateContentConfig(
+                system_instruction=PROMPT,
+            )
+        )
 
-        return {"answer": final_answer}
+        return {"answer": response.text.strip()}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API Error: {str(e)}")
+    
