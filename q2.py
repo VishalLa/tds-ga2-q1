@@ -1,0 +1,69 @@
+import os
+import io 
+import base64 
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from PIL import Image 
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv()
+
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    raise ValueError("GEMINI_API_KEY environment variable not set")
+
+genai.configure(api_key=api_key)
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class RequestData(BaseModel):
+    image_base64: str 
+    question: str 
+
+PROMPT = """
+You are an expert document analysis AI for the IITM Online Degree Curation Cell. Your task is to extract precise, accurate information from the provided scanned document, which may be an invoice, receipt, academic record, sales chart, pie chart, or data table.
+
+Carefully analyze the image and answer the user's question based strictly on the visible content. 
+
+CRITICAL RULES:
+1. Exact Extraction: Return numbers, dates, names, and totals exactly as they appear in the image. Do not round numbers or reformat dates unless explicitly asked.
+2. Zero Hallucination: If the requested information is not present, obscured, or illegible in the image, you must reply exactly with: "DATA_NOT_FOUND". Do not guess, infer, or calculate missing values.
+3. Spatial Awareness: When reading tables, ensure you map the correct column header to the correct row value. When reading charts, map the legend and axis labels to the correct data points.
+4. Formatting: Provide the direct answer clearly and concisely. Do not add conversational filler like "The image shows..." or "Based on the document...". 
+"""
+
+model = genai.GenerativeModel(
+    model_name='gemini-1.5-pro',
+    system_instruction=PROMPT
+)
+
+@app.post("/answer-image")
+async def answer_image(data: RequestData):
+    try:
+        base64_str = data.image_base64
+        if "," in base64_str:
+            base64_str = base64_str.split(",")[1]
+
+        image_bytes = base64.b64decode(base64_str)
+        image = Image.open(io.BytesIO(image_bytes))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+    
+    try:
+        response = model.generate_content([image, data.question])
+        final_answer = response.text.strip()
+
+        return {"answer": final_answer}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini API Error: {str(e)}")
