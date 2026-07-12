@@ -4,3 +4,4 @@ Pillow
 google-genai
 python-dotenv
 pydantic
+python-dateutil
