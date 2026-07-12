@@ -52,18 +52,28 @@ async def health_check():
 async def answer_image(data: RequestData):
     try:
         base64_str = data.image_base64
+        mime_type = "image/jpeg"
+        
         if "," in base64_str:
-            base64_str = base64_str.split(",")[1]
+            header, base64_str = base64_str.split(",", 1)
+            if "data:" in header and ";" in header:
+                mime_type = header.split(":")[1].split(";")[0]
 
         image_bytes = base64.b64decode(base64_str)
-        image = Image.open(io.BytesIO(image_bytes))
-    except Exception:
+        
+    except Exception as e:
+        print(f"Base64 Error: {e}")
         raise HTTPException(status_code=400, detail="Invalid base64 image data")
     
     try:
+        image_part = types.Part.from_bytes(
+            data=image_bytes, 
+            mime_type=mime_type
+        )
+        
         response = client.models.generate_content(
             model='gemini-1.5-pro',
-            contents=[image, data.question],
+            contents=[image_part, data.question],
             config=types.GenerateContentConfig(
                 system_instruction=PROMPT,
             )
@@ -72,5 +82,6 @@ async def answer_image(data: RequestData):
         return {"answer": response.text.strip()}
 
     except Exception as e:
+        print(f"\n❌ GEMINI API CRASHED: {str(e)}\n")
         raise HTTPException(status_code=500, detail=f"Gemini API Error: {str(e)}")
     
