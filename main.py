@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image 
-import google as genai
+from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
