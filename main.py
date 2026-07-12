@@ -115,7 +115,20 @@ def extract_date(text: str) -> Optional[str]:
         return None
     
 def extract_vendor(text: str) -> Optional[str]:
-    return find_first(r"vendor\s*[:\-]\s*([^\n\r]+)", text)
+    patterns = [
+        r"vendor\s*(?:name)?\s*[:\-]\s*([^\n\r]+)",
+        r"(?:billed|sold)\s*by\s*[:\-]\s*([^\n\r]+)",
+        r"seller\s*(?:name)?\s*[:\-]\s*([^\n\r]+)",
+        r"supplier\s*(?:name)?\s*[:\-]\s*([^\n\r]+)",
+        r"company\s*(?:name)?\s*[:\-]\s*([^\n\r]+)",
+        r"^from\s*[:\-]\s*([^\n\r]+)",
+        r"merchant\s*[:\-]\s*([^\n\r]+)",
+    ]
+    for pattern in patterns:
+        result = find_first(pattern, text, flags=re.IGNORECASE | re.MULTILINE)
+        if result:
+            return result
+    return None
 
 
 def _money_to_float(raw: Optional[str]) -> Optional[float]:
