@@ -72,7 +72,7 @@ async def answer_image(data: RequestData):
         )
         
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model='gemini-2.5-pro',
             contents=[image_part, data.question],
             config=types.GenerateContentConfig(
                 system_instruction=PROMPT,
