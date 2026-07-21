@@ -65,7 +65,7 @@ def ask(request: AskRequest):
 
     if not question or not chunks: return UNANSWERABLE_RESPONSE
 
-    question_words = srt(tokenize(question))
+    question_words = set(tokenize(question))
     if not question_words: return UNANSWERABLE_RESPONSE
 
     best_chunk = None 
