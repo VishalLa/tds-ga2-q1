@@ -27,7 +27,7 @@ def tokenize(text: str) -> List[str]:
     text = text.lower()
     text = text.translate(str.maketrans("", "", string.punctuation))
     words = text.split()
-    return [w for w in words if w not in STOPWORD and len(w) > 1]
+    return [w for w in words if w not in STOPWORDS and len(w) > 1]
 
 def split_sentences(text: str) -> List[str]:
     sentences = re.split(r"(?<=[.!?])\s+", text.strip())
