@@ -81,46 +81,43 @@ def ask(request: AskRequest):
     if not question_words:
         return UNANSWERABLE_RESPONSE
 
-    # --- Score every chunk by word overlap with the question ---
-    best_chunk = None
-    best_score = 0.0
+    best_sentence = None
+    best_sentence_score = -1.0
+    best_chunk_id = None
+
+    candidates = []  # (score, sentence, chunk_id) for every sentence, for tie handling
 
     for chunk in chunks:
-        chunk_words = set(tokenize(chunk.text))
-        if not chunk_words:
-            continue
-        overlap = question_words & chunk_words
-        # Jaccard-style score: how much of the question is reflected in this chunk
-        score = len(overlap) / len(question_words)
-        if score > best_score:
-            best_score = score
-            best_chunk = chunk
+        for sentence in split_sentences(chunk.text):
+            sentence_words = set(tokenize(sentence))
+            if not sentence_words:
+                continue
+            overlap = question_words & sentence_words
+            score = len(overlap) / len(question_words)
+            candidates.append((score, sentence, chunk.chunk_id))
+            if score > best_sentence_score:
+                best_sentence_score = score
+                best_sentence = sentence
+                best_chunk_id = chunk.chunk_id
 
     # --- Rule 1: Unanswerable case ---
-    if best_chunk is None or best_score < ANSWERABILITY_THRESHOLD:
+    if best_sentence is None or best_sentence_score < ANSWERABILITY_THRESHOLD:
         return UNANSWERABLE_RESPONSE
 
-    # --- Extract the single best-matching sentence from the winning chunk ---
-    sentences = split_sentences(best_chunk.text)
-    best_sentence = best_chunk.text
-    best_sentence_score = -1.0
-
-    for sentence in sentences:
-        sentence_words = set(tokenize(sentence))
-        if not sentence_words:
+    TIE_TOLERANCE = 0.01
+    citation_ids = [best_chunk_id]
+    for score, sentence, chunk_id in candidates:
+        if chunk_id == best_chunk_id:
             continue
-        overlap = question_words & sentence_words
-        s_score = len(overlap) / len(question_words)
-        if s_score > best_sentence_score:
-            best_sentence_score = s_score
-            best_sentence = sentence
+        if score >= best_sentence_score - TIE_TOLERANCE and chunk_id not in citation_ids:
+            citation_ids.append(chunk_id)
 
     # --- Confidence: scale the overlap score into a believable 0-1 range ---
-    confidence = round(min(0.55 + best_score * 0.45, 0.99), 2)
+    confidence = round(min(0.55 + best_sentence_score * 0.45, 0.99), 2)
 
     return AskResponse(
         answer=best_sentence.strip(),
-        citations=[best_chunk.chunk_id],   # only ever a real chunk_id, never invented
+        citations=citation_ids,   # every id here is a real chunk_id that was scored
         confidence=confidence,
         answerable=True,
     )
