@@ -43,7 +43,7 @@ class AskRequest(BaseModel):
 
 
 class AskResponse(BaseModel):
-    answer = str 
+    answer: str 
     citations: List[str]
     confidence: float
     answerable: bool
