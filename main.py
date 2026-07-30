@@ -28,13 +28,13 @@ class SkillRequest(BaseModel):
     skill: str
 
 class Step(BaseModel):
-    step_number: int 
-    tool: str 
-    args: Dict[str, Any]
-    token_used: int 
+    step_number: int
+    tool: str
+    args: Any = {}
+    tokens_used: int
 
 class RunRequest(BaseModel):
-    budget_tokens: int 
+    budget_tokens: int
     steps: List[Step]
 
 
@@ -161,49 +161,53 @@ def scan_skill(req: SkillRequest):
     return {"categories": list(categories)}
 
 
-def normalize_args(args_dict): 
+def normalize_args(args_dict):
     def clean_val(v):
-        if isinstance(v, str): return re.sub(r'\s+', '', v)
-        elif isinstance(v, dict): return {k: clean_val(val) for k, val in v.items() if k!= "trace_id"}
-        elif isinstance(v, list): return [clean_val[v] for val in v]
-        else: return v 
+        if isinstance(v, str):
+            return " ".join(v.split())
+        elif isinstance(v, dict):
+            return {k: clean_val(val) for k, val in v.items() if k != "trace_id"}
+        elif isinstance(v, list):
+            return [clean_val(item) for item in v]
+        else:
+            return v
 
     cleaned_dict = clean_val(args_dict)
     return json.dumps(cleaned_dict, sort_keys=True)
 
 @app.post("/check")
 def check_run(req: RunRequest):
-    total_tokens = sum(step.token_used for ste in req.steps)
-    if total_tokens >= req.budget_tokens: 
+    total_tokens = sum(step.tokens_used for step in req.steps)
+    if total_tokens >= req.budget_tokens:
         return {
-            "decision": "halt", 
+            "decision": "halt",
             "reason": "Budget exhausted."
         }
-    
+
     cleaned_history = []
     for step in req.steps:
         cleaned_history.append((step.tool, normalize_args(step.args)))
-    
+
     history_length = len(cleaned_history)
 
     if history_length >= 3:
         last_3 = cleaned_history[-3:]
         if last_3[0] == last_3[1] == last_3[2]:
             return {
-                "decision": "halt", 
+                "decision": "halt",
                 "reason": "Loop detected: 3 identical steps in a row."
             }
 
     if history_length >= 6:
         a1, b1, a2, b2, a3, b3 = cleaned_history[-6:]
 
-        if a1 == a2 == a3 and b1 == b2 == b3 and a1 != a2:
+        if a1 == a2 == a3 and b1 == b2 == b3 and a1 != b1:
             return {
-                "decision": "halt", 
+                "decision": "halt",
                 "reason": "Loop detected: 6-step alternating cycle."
             }
 
     return {
-        "decision": "continue", 
+        "decision": "continue",
         "reason": "Looking good, keep going."
     }
