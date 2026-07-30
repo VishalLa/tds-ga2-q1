@@ -10,7 +10,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse, urljoin, urlsplit
 from typing import List, Dict, Any
 
 REGISTERED_EMAIL = "23f2003086@ds.study.iitm.ac.in"
