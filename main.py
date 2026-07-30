@@ -1,12 +1,15 @@
 import os
 import re
 import json
+import hashlib
 import posixpath
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from urllib.parse import urlparse
 from typing import List, Dict, Any
 
+REGISTERED_EMAIL = "23f2003086@ds.study.iitm.ac.in"
 app = FastAPI()
 
 class ProratmaionRequest(BaseModel):
@@ -211,3 +214,114 @@ def check_run(req: RunRequest):
         "decision": "continue",
         "reason": "Looking good, keep going."
     }
+
+@app.post("/mcp")
+async def mcp_endpoint(request: Request):
+    msg = await request.json()
+
+    if not msg or msg.get("jsonrpc") != "2.0":
+        return JSONResponse(
+            status_code=400,
+            content={
+                "jsonrpc": "2.0",
+                "id": msg.get("id") if msg else None,
+                "error": {"code": -32600, "message": "Invalid Request"},
+            },
+        )
+    
+    msg_id = msg.get("id")
+    method = msg.get("method")
+
+    if msg_id is None: 
+        return Response(status_code=202)
+
+    if method == "initialize":
+        return JSONResponse(
+            content={
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {
+                        "name": "solve-challenge-server",
+                        "version": "1.0.0",
+                    },
+                },
+            }
+        )
+ 
+    if method == "tools/list":
+        return JSONResponse(
+            content={
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": "solve_challenge",
+                            "description": (
+                                "Reads the X-Exam-Challenge header and "
+                                "returns the required hash."
+                            ),
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {},
+                                "required": [],
+                            },
+                        }
+                    ]
+                },
+            }
+        )
+ 
+    if method == "tools/call":
+        params = msg.get("params") or {}
+        tool_name = params.get("name")
+ 
+        if tool_name != "solve_challenge":
+            return JSONResponse(
+                content={
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {
+                        "code": -32602,
+                        "message": f"Unknown tool: {tool_name}",
+                    },
+                }
+            )
+ 
+        challenge = request.headers.get("x-exam-challenge")
+ 
+        if not challenge:
+            return JSONResponse(
+                content={
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {
+                        "code": -32000,
+                        "message": "Missing X-Exam-Challenge header",
+                    },
+                }
+            )
+ 
+        raw = f"{challenge}:{REGISTERED_EMAIL}"
+        full_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        answer = full_hash[:16]
+ 
+        return JSONResponse(
+            content={
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {"content": [{"type": "text", "text": answer}]},
+            }
+        )
+ 
+    return JSONResponse(
+        content={
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "error": {"code": -32601, "message": f"Method not found: {method}"},
+        }
+    )
+
