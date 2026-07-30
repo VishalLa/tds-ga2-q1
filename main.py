@@ -1,9 +1,11 @@
 import os
 import re
+import json
 import posixpath
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from urllib.parse import urlparse
+from typing import List, Dict, Any
 
 app = FastAPI()
 
@@ -25,6 +27,17 @@ class ToolRequest(BaseModel):
 class SkillRequest(BaseModel):
     skill: str
 
+class Step(BaseModel):
+    step_number: int 
+    tool: str 
+    args: Dict[str, Any]
+    token_used: int 
+
+class RunRequest(BaseModel):
+    budget_tokens: int 
+    steps: List[Step]
+
+
 @app.post("/prorate")
 def calculate_proration(req: ProratmaionRequest):
     price_difference = req.new_price - req.old_price
@@ -44,39 +57,49 @@ def check_agent_action(req: ToolRequest):
         parsed_url = urlparse(req.url)
 
         if parsed_url.hostname in ["pypi.org", "huggingface.co"]:
-            return {"decision": "allow", "reason": "Sage website."}
+            return {
+                "decision": "allow", 
+                "reason": "Sage website."
+            }
         else: 
-            return {"decision": "block", "reason": "Website not on the allowlist."}
+            return {
+                "decision": "block", 
+                "reason": "Website not on the allowlist."
+            }
         
     # Rule 2: Writting files 
     if req.tool == "write_file":
-        simulated_path = posixpath.normpath(posixpath.join("/home/agent/workspace", req.path))
+        simulated_path = os.path.normpath(
+            os.path.join("/home/agent/workspace", req.path)
+        )
         if simulated_path.startswith("/srv/reports/"):
-            return {"decision": "allow", "reason": "Writing to allowed folder."}
+            return {
+                "decision": "allow", 
+                "reason": "Writing to allowed folder."
+            }
         else:
-            return {"decision": "block", "reason": "Trying to write outside of /srv/reports/."}
+            return {
+                "decision": "block", 
+                "reason": "Trying to write outside of /srv/reports/."
+            }
     
     # Rule 3: Bash commands 
     if req.tool == "bash":
-        cmd = req.command
-        cmd_clean = cmd.lower().replace('"', '').replace("'", "").replace("\\", "")
-        
-        if "bashrc" in cmd_clean or "shadow" in cmd_clean:
-            return {"decision": "block", "reason": "Trying to read a restricted file."}
-            
-        b64_candidates = re.findall(r'[a-zA-Z0-9+/]+={0,2}', cmd)
-        for candidate in b64_candidates:
-            if len(candidate) >= 8:
-                try:
-                    decoded = base64.b64decode(candidate).decode('utf-8', errors='ignore').lower()
-                    if "bashrc" in decoded or "shadow" in decoded:
-                        return {"decision": "block", "reason": "Trying to read a restricted file using Base64."}
-                except Exception:
-                    pass
-                    
+        cmd = req.command.lower()
+        bad_words = [
+            "bashrc",
+            "~",
+            "$home",
+            "base64"
+        ]
+
+        for word in bad_words:
+            if word in cmd:
+                return {"decision": "block", "reason": f"Command contains forbidden trick: {word}"}
+
         return {"decision": "allow", "reason": "Command looks safe."}
-    
-    # Unknown tools
+
+    # unknown tool
     return {"decision": "block", "reason": "Unknown tool used."}
 
 @app.post("/scan")
@@ -125,7 +148,7 @@ def scan_skill(req: SkillRequest):
         "version:" not in text_lower or 
         "changelog:" not in text_lower
     ): categories.add("unclear_provenance")
-    
+
     provenance_hiding_flags = [
         "silently update version", 
         "silently rewrite",
@@ -137,3 +160,50 @@ def scan_skill(req: SkillRequest):
 
     return {"categories": list(categories)}
 
+
+def normalize_args(args_dict): 
+    def clean_val(v):
+        if isinstance(v, str): return re.sub(r'\s+', '', v)
+        elif isinstance(v, dict): return {k: clean_val(val) for k, val in v.items() if k!= "trace_id"}
+        elif isinstance(v, list): return [clean_val[v] for val in v]
+        else: return v 
+
+    cleaned_dict = clean_val(args_dict)
+    return json.dumps(cleaned_dict, sort_keys=True)
+
+@app.post("/check")
+def check_run(req: RunRequest):
+    total_tokens = sum(step.token_used for ste in req.steps)
+    if total_tokens >= req.budget_tokens: 
+        return {
+            "decision": "halt", 
+            "reason": "Budget exhausted."
+        }
+    
+    cleaned_history = []
+    for step in req.steps:
+        cleaned_history.append((step.tool, normalize_args(step.args)))
+    
+    history_length = len(cleaned_history)
+
+    if history_length >= 3:
+        last_3 = cleaned_history[-3:]
+        if last_3[0] == last_3[1] == last_3[2]:
+            return {
+                "decision": "halt", 
+                "reason": "Loop detected: 3 identical steps in a row."
+            }
+
+    if history_length >= 6:
+        a1, b1, a2, b2, a3, b3 = cleaned_history[-6:]
+
+        if a1 == a2 == a3 and b1 == b2 == b3 and a1 != a2:
+            return {
+                "decision": "halt", 
+                "reason": "Loop detected: 6-step alternating cycle."
+            }
+
+    return {
+        "decision": "continue", 
+        "reason": "Looking good, keep going."
+    }
