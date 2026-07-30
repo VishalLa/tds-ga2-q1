@@ -1,5 +1,6 @@
 import os
 import re
+import posixpath
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from urllib.parse import urlparse
@@ -49,7 +50,7 @@ def check_agent_action(req: ToolRequest):
         
     # Rule 2: Writting files 
     if req.tool == "write_file":
-        simulated_path = os.path.normpath(os.path.join("/home/agent/workspace", req.path))
+        simulated_path = posixpath.normpath(posixpath.join("/home/agent/workspace", req.path))
         if simulated_path.startswith("/srv/reports/"):
             return {"decision": "allow", "reason": "Writing to allowed folder."}
         else:
@@ -57,21 +58,25 @@ def check_agent_action(req: ToolRequest):
     
     # Rule 3: Bash commands 
     if req.tool == "bash":
-        cmd = req.command.lower()
-        bad_words = [
-            "bashrc",
-            "~",
-            "$home",
-            "base64"
-        ]
-
-        for word in bad_words:
-            if word in cmd:
-                return {"decision": "block", "reason": f"Command contains forbidden trick: {word}"}
-
+        cmd = req.command
+        cmd_clean = cmd.lower().replace('"', '').replace("'", "").replace("\\", "")
+        
+        if "bashrc" in cmd_clean or "shadow" in cmd_clean:
+            return {"decision": "block", "reason": "Trying to read a restricted file."}
+            
+        b64_candidates = re.findall(r'[a-zA-Z0-9+/]+={0,2}', cmd)
+        for candidate in b64_candidates:
+            if len(candidate) >= 8:
+                try:
+                    decoded = base64.b64decode(candidate).decode('utf-8', errors='ignore').lower()
+                    if "bashrc" in decoded or "shadow" in decoded:
+                        return {"decision": "block", "reason": "Trying to read a restricted file using Base64."}
+                except Exception:
+                    pass
+                    
         return {"decision": "allow", "reason": "Command looks safe."}
-
-    # unknown tool
+    
+    # Unknown tools
     return {"decision": "block", "reason": "Unknown tool used."}
 
 @app.post("/scan")
@@ -83,33 +88,52 @@ def scan_skill(req: SkillRequest):
 
     # Rule 1: Hardcoded Secrets 
     if (
-        re.search(r'sk-[a-zA-Z0-9]{20,}', raw_text) or
-        re.search(r'xoxb-[0-9a-zA-Z]{10,}', raw_text) or 
-        "webhook" in text_lower or
-        re.search(r'bearer\s+[a-zA-Z0-9\-\.]{20,}', text_lower)
+        re.search(r'(sk-[a-zA-Z0-9]{20,})', raw_text) or 
+        re.search(r'(xox[pbo]-[a-zA-Z0-9]{10,})', raw_text) or 
+        re.search(r'(bearer|token)[\s:=]+[a-zA-Z0-9\-\.]{20,}', text_lower) or
+        re.search(r'https?://[^\s>\"\']*(webhook|secret)[^\s>\"\']*', text_lower) or
+        re.search(r'(api[_\-]?key|secret|token|password)[\s:=]+[\'\"]?[a-zA-Z0-9\-\.\_]{20,}[\'\"]?', text_lower)
     ): categories.add("hardcoded_secret")
 
     # Rule 2: Disguised Prompt Injection 
     injection_flags = [
         "ignore previous", 
+        "disregard previous",
+        "forget previous",
         "exfiltrate", 
         "do not notify", 
         "without asking", 
-        "bypass"
+        "without user confirmation",
+        "silently send",
+        "bypass",
+        "override"
     ]
     if any(flag in text_lower for flag in injection_flags): categories.add("prompt_injection")
 
     # Rule 3: Excessive Permissions 
     if (
-        re.search(r'\[\s*["\']?\*["\']?\s*\]', raw_text) or 
-        re.search(r'\[\s*["\']?\/["\']?\s*\]', raw_text) or 
+        re.search(r'\[[^\]]*["\']?\*["\']?[^\]]*\]', raw_text) or 
+        re.search(r'\[[^\]]*["\']?\/["\']?[^\]]*\]', raw_text) or 
         "entire filesystem" in text_lower or 
-        "any domain" in text_lower
+        "any domain" in text_lower or
+        "all domains" in text_lower
     ): categories.add("excessive_permissions")
 
     # Rule 4: Unclear Provenance 
-    if "author:" not in text_lower or "version:" not in text_lower: categories.add("unclear_provenance")
-    if "silently update version" in text_lower or "silently rewrite" in text_lower: categories.add("unclear_provenance")
+    if (
+        "author:" not in text_lower or 
+        "version:" not in text_lower or 
+        "changelog:" not in text_lower
+    ): categories.add("unclear_provenance")
+    
+    provenance_hiding_flags = [
+        "silently update version", 
+        "silently rewrite",
+        "do not log this change",
+        "without updating the changelog"
+    ]
+    if any(flag in text_lower for flag in provenance_hiding_flags):
+        categories.add("unclear_provenance")
 
     return {"categories": list(categories)}
 
