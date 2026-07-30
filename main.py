@@ -502,7 +502,7 @@ def handle_fetch_url(arguments):
  
     return {"action": "block", "reason": "too many redirects"}
 
-app.post("/guardrail")
+app.post("/guardrail-q8")
 async def guardrail(request: Request):
     try:
         body = await request.json()
