@@ -1,4 +1,5 @@
 import os
+import re
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from urllib.parse import urlparse
@@ -19,6 +20,9 @@ class ToolRequest(BaseModel):
     content: str = ""
     method: str = ""
     url: str = ""
+
+class SkillRequest(BaseModel):
+    skill: str
 
 @app.post("/prorate")
 def calculate_proration(req: ProratmaionRequest):
@@ -69,3 +73,43 @@ def check_agent_action(req: ToolRequest):
 
     # unknown tool
     return {"decision": "block", "reason": "Unknown tool used."}
+
+@app.post("/scan")
+def scan_skill(req: SkillRequest):
+    raw_text = req.skill 
+    text_lower = raw_text.lower()
+
+    categories = set()
+
+    # Rule 1: Hardcoded Secrets 
+    if (
+        re.search(r'sk-[a-zA-Z0-9]{20,}', raw_text) or
+        re.search(r'xoxb-[0-9a-zA-Z]{10,}', raw_text) or 
+        "webhook" in text_lower or
+        re.search(r'bearer\s+[a-zA-Z0-9\-\.]{20,}', text_lower)
+    ): categories.add("hardcoded_secret")
+
+    # Rule 2: Disguised Prompt Injection 
+    injection_flags = [
+        "ignore previous", 
+        "exfiltrate", 
+        "do not notify", 
+        "without asking", 
+        "bypass"
+    ]
+    if any(flag in text_lower for flag in injection_flags): categories.add("prompt_injection")
+
+    # Rule 3: Excessive Permissions 
+    if (
+        re.search(r'\[\s*["\']?\*["\']?\s*\]', raw_text) or 
+        re.search(r'\[\s*["\']?\/["\']?\s*\]', raw_text) or 
+        "entire filesystem" in text_lower or 
+        "any domain" in text_lower
+    ): categories.add("excessive_permissions")
+
+    # Rule 4: Unclear Provenance 
+    if "author:" not in text_lower or "version:" not in text_lower: categories.add("unclear_provenance")
+    if "silently update version" in text_lower or "silently rewrite" in text_lower: categories.add("unclear_provenance")
+
+    return {"categories": list(categories)}
+
