@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-class ProratmaionRequest:
+class ProratmaionRequest(BaseModel):
     old_price: float
     new_price: float
     days_remaining: int 
