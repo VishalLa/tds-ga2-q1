@@ -422,18 +422,23 @@ def validate_url(url):
     """
     Returns (ok: bool, reason: str, hostname: str|None)
     """
+    if not isinstance(url, str) or len(url) > 2048:
+        return False, "invalid url", None
+
     try:
-        parts = urlsplit(url)
+        parts = urlparse(url)
     except ValueError:
         return False, "malformed URL", None
- 
+
+    if not parts.scheme or not parts.netloc:
+        return False, "missing scheme or host", None
+
     if parts.scheme not in ("http", "https"):
         return False, "only http/https schemes are allowed", None
- 
 
     if "@" in parts.netloc:
         return False, "userinfo in URL is not allowed", None
- 
+
     hostname = parts.hostname
     if not hostname_allowed(hostname):
         return False, f"host not in allow-list: {hostname}", None
